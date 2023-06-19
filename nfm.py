@@ -59,7 +59,7 @@ silence = numpy.zeros(IF_RATE // 10)
 class Demodulator:
 	def __init__(self, freq):
 		self.freq = freq
-
+		self.wav = None
 		self.histeresis = HISTERESIS_UP
 		self.old_histeresis = 0
 		self.is_recording = False
@@ -107,17 +107,19 @@ class Demodulator:
 		self.thread = threading.Thread(target=worker)
 		self.thread.start()
 
-    def create_wav(self):
-        current_datetime = datetime.datetime.now()
-        fname = current_datetime.strftime("%d-%m-%Y_%H-%m.wav")
-        path = f"./{self.freq}"
-        if not os.path.exists(path):
-            os.makedirs(path)
-        fpath = os.path.join(path, fname) 
-        wav = wave.open(fpath, "w")
-        return wav
-	
-    def close_queue(self):
+	def create_wav(self):
+		current_datetime = datetime.datetime.now()
+		fname = current_datetime.strftime("%d-%m-%Y_%H-%m.wav")
+		path = f"./{self.freq}"
+		if not os.path.exists(path):
+			os.makedirs(path)
+		fpath = os.path.join(path, fname) 
+		self.wav = wave.open(fpath, "w")
+		self.wav.setnchannels(1)
+		self.wav.setsampwidth(2)
+		self.wav.setframerate(AUDIO_RATE)
+
+	def close_queue(self):
 		self.queue.put(None)
 
 	def drain_queue(self):
@@ -205,8 +207,9 @@ class Demodulator:
 	
 		bits = struct.pack('<%dh' % len(output), *output)
 		wav = self.create_wav()
-		wav.writeframes(bits)
-		wav.close()
+		if not self.wav:
+			self.create_wav()
+		self.wav.writeframes(bits)
         # print("%s %f" % ('f wav', time.time() - self.tmbase))
 
 	# Determine if audio should be squelched or recorded
