@@ -109,7 +109,7 @@ class Demodulator:
 
     def create_wav(self):
         current_datetime = datetime.datetime.now()
-        fname = current_datetime.strftime("%d-%m-%Y_%H-%M-%f.wav")
+        fname = current_datetime.strftime("%d-%m-%Y_%H-%M.wav")
         path = f"./{self.freq}"
         if not os.path.exists(path):
             os.makedirs(path)
@@ -209,7 +209,6 @@ class Demodulator:
         if not self.wav:
             self.create_wav()
         self.wav.writeframes(bits)
-        print("%s %f" % ('f wav', time.time() - self.tmbase))
 
     # Determine if audio should be squelched or recorded
 
@@ -245,7 +244,7 @@ class Demodulator:
                 self.is_recording = False
                 self.histeresis = HISTERESIS_UP
                 self.memory_up = []
-                self.wav = None
+                # self.wav = None
                 # Return a small silence block to finish audio
                 return False, silence
 
@@ -324,30 +323,33 @@ for f in freqs:
 
 remaining_data = b''
 
-while True:
-    # Ingest data
-    data = sys.stdin.buffer.read(INGEST_SIZE * 2)
-    if not data:
-        break
-    data = remaining_data + data
+try:
+    while True:
+        # Ingest data
+        data = sys.stdin.buffer.read(INGEST_SIZE * 2)
+        if not data:
+            break
+        data = remaining_data + data
 
-    tmbase = time.time()
+        tmbase = time.time()
 
-    # Save odd byte
-    if len(data) % 2 == 1:
-        print("Odd byte, that's odd", file=sys.stderr)
-        remaining_data = data[-1:]
-        data = data[:-1]
+        # Save odd byte
+        if len(data) % 2 == 1:
+            print("Odd byte, that's odd", file=sys.stderr)
+            remaining_data = data[-1:]
+            data = data[:-1]
 
-    # Convert to complex numbers
-    iqdata = numpy.frombuffer(data, dtype=numpy.uint8)
-    iqdata = iqdata - 127.5
-    iqdata = iqdata / 128.0
-    iqdata = iqdata.view(complex)
+        # Convert to complex numbers
+        iqdata = numpy.frombuffer(data, dtype=numpy.uint8)
+        iqdata = iqdata - 127.5
+        iqdata = iqdata / 128.0
+        iqdata = iqdata.view(complex)
 
-    # Forward I/Q samples to all channels
-    for k, d in demodulators.items():
-        d.ingest(iqdata)
+        # Forward I/Q samples to all channels
+        for k, d in demodulators.items():
+            d.ingest(iqdata)
+except KeyboardInterrupt:
+    print("The recording has been interrupted")
 
 for k, d in demodulators.items():
     d.close_queue()
