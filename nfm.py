@@ -48,7 +48,8 @@ assert (INPUT_RATE / STEP == INPUT_RATE // STEP)
 for f in freqs:
     if_freq = abs(CENTER - f)
     assert(if_freq / STEP == if_freq // STEP)
-    assert(if_freq < (0.4 * INPUT_RATE))
+    assert(if_freq < (0.4 * INPUT_RATE)), f"if_freq={if_freq} "\
+        f" 0.4 * INPUT_RATE={0.4 * INPUT_RATE}"
 
 MAX_DEVIATION = IF_BANDWIDTH / 2
 DEVIATION_X_SIGNAL = 0.25 / (math.pi * MAX_DEVIATION / (IF_RATE / 2))
