@@ -109,7 +109,7 @@ class Demodulator:
 
     def create_wav(self):
         current_datetime = datetime.datetime.now()
-        fname = current_datetime.strftime("%d-%m-%Y_%H-%M.wav")
+        fname = current_datetime.strftime("%d-%m-%Y_%H-%M-%f.wav")
         path = f"./{self.freq}"
         if not os.path.exists(path):
             os.makedirs(path)
@@ -188,6 +188,7 @@ class Demodulator:
     
         squelch, output_raw = self.squelch(dbfs, output_raw)
         if squelch:
+            self.wav = None
             return
 
         # Filter to audio bandwidth and decimate
