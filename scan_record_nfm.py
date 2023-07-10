@@ -11,7 +11,7 @@
 
 import os
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 import struct, numpy, sys, math, cmath, wave, filters, time, datetime
 import pandas as pd
 import queue, threading
@@ -34,7 +34,7 @@ INGEST_SIZE = INPUT_RATE // 10
 IF_RATE = 25000
 AUDIO_BANDWIDTH = 4000
 AUDIO_RATE = 12500
-
+FREQUENCY_RESOLUTION = 5 # in kHz
 THRESHOLD_SNR = 9 # 9dB SNR = 1.5 bit
 THRESHOLD_AC = 0.09
 HISTERESIS_UP = -3      # not recording -> recording
@@ -60,7 +60,7 @@ for f in freqs:
 
 MAX_DEVIATION = IF_BANDWIDTH / 2
 DEVIATION_X_SIGNAL = 0.25 / (math.pi * MAX_DEVIATION / (IF_RATE / 2))
-THRESH_FACTOR = 5
+THRESH_FACTOR = 9
 
 tau = 2 * math.pi
 silence = numpy.zeros(IF_RATE // 10)
@@ -119,7 +119,7 @@ class Demodulator:
     def create_wav(self):
         current_datetime = datetime.datetime.now()
         fname = current_datetime.strftime("%d-%m-%Y_%H-%M-%f.wav")
-        path = f"./{self.freq}"
+        path = f"./out/{self.freq}"
         if not os.path.exists(path):
             os.makedirs(path)
         fpath = os.path.join(path, fname) 
@@ -368,7 +368,48 @@ def get_average_noise() -> Tuple[float, float]:
 
 demodulators = {}
 for f in freqs:
+    f = float((f / 1000) // FREQUENCY_RESOLUTION) * FREQUENCY_RESOLUTION * 1000
+    print(f)
     demodulators[f] = Demodulator(f)
+
+dict_lock = threading.Lock()
+class FrequencyAdder:
+    """
+    Handles new frequencies
+    """
+    def __init__(self, demod_dict: Dict):
+        # Launch thread for frequency search
+        def worker():
+            while True:
+                iqsamples = self.queue.get()
+                if iqsamples is None:
+                    break
+                self._ingest(iqsamples)
+                self.queue.task_done()
+        
+        self.demod = demod_dict
+        self.queue = queue.Queue()
+        self.thread = threading.Thread(target=worker)
+        self.thread.start()
+
+    def ingest(self, iqsamples):
+        self.queue.put(iqsamples)
+    
+    def _ingest(self, iqsamples: numpy.ndarray):
+        """
+        Adds the frequencies with strong signal
+        to freqs_thresholds
+        """
+        f, S = convert2hist(iqsamples) 
+        df = pd.DataFrame({"freq": f, "power": S})
+        df = df.query(f"power > {threshold}")
+        for freq, power in zip(df.freq, df.power):
+            freq = float(freq * 1000 // FREQUENCY_RESOLUTION) * FREQUENCY_RESOLUTION * 1000
+            if freq not in freqs_thresholds:
+                with dict_lock:
+                    logging.info(f"Frequency added: {freq}")
+                    freqs_thresholds[freq].append(power)
+                    self.demod[freq] = Demodulator(freq)
 
 remaining_data = b''
 mean, std = get_average_noise()
@@ -376,24 +417,14 @@ threshold = mean + THRESH_FACTOR *  std
 logging.info(f"Signal threshold: {threshold}")
 freqs_thresholds = defaultdict(lambda: list())
 
-def check_frequencies(iqdata: numpy.ndarray):
-    """
-    Adds the frequencies with strong signal
-    to freqs_thresholds
-    """
-    f, S = read_samples_convert()
-    df = pd.DataFrame({"freq": f, "power": S})
-    df = df.query(f"power > {threshold}")
-    for freq, power in zip(df.freq, df.power):
-        logging.info(f"Frequency added: {freq:0.3f}")
-        freqs_thresholds[freq].append(power)
-
 try:
     while True:
         # Obtain the data
         iqdata, remaining_data = ingest_data(INGEST_SIZE * 2, remaining_data)
         # Forward I/Q samples to all channels
-        for k, d in demodulators.items():
+        with dict_lock:
+            demods = list(demodulators.items())
+        for k, d in demods:
             d.ingest(iqdata)
         # Check for new frequencies
         check_frequencies(iqdata)
