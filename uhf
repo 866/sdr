@@ -2,7 +2,8 @@
 
 # Record narrow FM channels (most commonly VHF and UHF) as audio WAV files
 
-FREQS="446000000 446020000 446040000"
+FREQS="446637500 446657500 446677500"
+
 # FREQS="858612500"
 
 # Determine center automatically

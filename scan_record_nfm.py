@@ -366,18 +366,12 @@ def get_average_noise() -> Tuple[float, float]:
         time.sleep(0.1)
     return numpy.mean(S), numpy.std(S)
 
-demodulators = {}
-for f in freqs:
-    f = float((f / 1000) // FREQUENCY_RESOLUTION) * FREQUENCY_RESOLUTION * 1000
-    print(f)
-    demodulators[f] = Demodulator(f)
 
-dict_lock = threading.Lock()
 class FrequencyAdder:
     """
     Handles new frequencies
     """
-    def __init__(self, demod_dict: Dict):
+    def __init__(self, demod_dict: Dict, lock):
         # Launch thread for frequency search
         def worker():
             while True:
@@ -386,7 +380,8 @@ class FrequencyAdder:
                     break
                 self._ingest(iqsamples)
                 self.queue.task_done()
-        
+        self.lock = lock 
+        self.freqs_thresholds = defaultdict(lambda: list())
         self.demod = demod_dict
         self.queue = queue.Queue()
         self.thread = threading.Thread(target=worker)
@@ -405,17 +400,24 @@ class FrequencyAdder:
         df = df.query(f"power > {threshold}")
         for freq, power in zip(df.freq, df.power):
             freq = float(freq * 1000 // FREQUENCY_RESOLUTION) * FREQUENCY_RESOLUTION * 1000
-            if freq not in freqs_thresholds:
+            if freq not in self.freqs_thresholds:
                 with dict_lock:
                     logging.info(f"Frequency added: {freq}")
-                    freqs_thresholds[freq].append(power)
+                    self.freqs_thresholds[freq].append(power)
                     self.demod[freq] = Demodulator(freq)
 
+
+demodulators = {}
+for f in freqs:
+    f = float((f / 1000) // FREQUENCY_RESOLUTION) * FREQUENCY_RESOLUTION * 1000
+    print(f)
+    demodulators[f] = Demodulator(f)
 remaining_data = b''
 mean, std = get_average_noise()
-threshold = mean + THRESH_FACTOR *  std
+threshold = mean + THRESH_FACTOR * std
 logging.info(f"Signal threshold: {threshold}")
-freqs_thresholds = defaultdict(lambda: list())
+dict_lock = threading.Lock()
+fa = FrequencyAdder(demodulators, dict_lock)
 
 try:
     while True:
@@ -427,8 +429,7 @@ try:
         for k, d in demods:
             d.ingest(iqdata)
         # Check for new frequencies
-        check_frequencies(iqdata)
-
+        fa.ingest(iqdata)
 except KeyboardInterrupt:
     logging.info("The recording has been interrupted")
 

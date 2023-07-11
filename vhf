@@ -1,6 +1,6 @@
 #!/bin/bash -x
 
-FREQS="444120000 446000000"
+FREQS="446000000"
 # FREQS="147000000"
 CHANNEL_BW=20000
 
@@ -15,8 +15,7 @@ STEP=2500
 CENTR=$(($s / $n))
 CENTR=$(($CENTR / $STEP))
 CENTR=$(($CENTR * $STEP))
-# CENTR=146900000
 
-BW=1000000
+BW=1800000
 
-rtl_sdr -f $CENTR -g 25 -s $BW - | ./nfm.py $CENTR $BW $STEP $CHANNEL_BW $FREQS . -a $*
+rtl_sdr -f $CENTR -g 25 -s $BW - | ./scan_record_nfm.py $CENTR $BW $STEP $CHANNEL_BW $FREQS . -a $*
