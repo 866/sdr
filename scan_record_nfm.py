@@ -39,6 +39,7 @@ THRESHOLD_SNR = 18 # 9dB SNR = 1.5 bit
 THRESHOLD_AC = 0.73
 HISTERESIS_UP = -3     # not recording -> recording
 HISTERESIS_DOWN = 3   # recording -> stop
+CHANNEL_SPACING = 12500
 
 assert (INPUT_RATE // IF_RATE) == (INPUT_RATE / IF_RATE)
 assert (IF_RATE // AUDIO_RATE) == (IF_RATE / AUDIO_RATE)
@@ -61,7 +62,7 @@ for f in freqs:
 MAX_DEVIATION = IF_BANDWIDTH / 2
 DEVIATION_X_SIGNAL = 0.25 / (math.pi * MAX_DEVIATION / (IF_RATE / 2))
 THRESH_FACTOR = 9
-
+FREQ_OUT_PATH = "out_freqs.txt"
 tau = 2 * math.pi
 silence = numpy.zeros(IF_RATE // 10)
 
@@ -74,6 +75,10 @@ class Demodulator:
         self.is_recording = False
         self.memory_up = []
         self.insert_timestamp = False
+
+        # Determine the frequency boundaries
+        self.lower_freq = freq - CHANNEL_SPACING // 2
+        self.higher_freq = freq + CHANNEL_SPACING // 2
 
         # Energy (signal strength) estimation
         self.dbfs_avg = None
@@ -115,6 +120,11 @@ class Demodulator:
         self.queue = queue.Queue()
         self.thread = threading.Thread(target=worker)
         self.thread.start()
+
+    def is_within(freq: int) -> bool:
+        """ Checks if the frequency within the
+        range of Demodulator's responsibility """
+        return self.lower_freq < freq <= self.higher_freq
 
     def create_wav(self):
         current_datetime = datetime.datetime.now()
@@ -396,13 +406,17 @@ class FrequencyAdder:
         to freqs_thresholds
         """
         f, S = convert2hist(iqsamples) 
+        with open(FREQ_OUT_PATH, "at") as out:
+            for freq, power in zip(f, S):
+                out.write(f"{f} {S}\n")
         max_ind = S.argmax()
         power = S[max_ind]
         if power < threshold:
             return
         freq = f[max_ind]
-        freq = float(freq * 1000 // FREQUENCY_RESOLUTION) * FREQUENCY_RESOLUTION * 1000
-        if freq not in self.freqs_thresholds:
+        in_modulators = any([demod.is_within(freq)
+                             for demod in self.demod.values()])
+        if not in_modulators:
             with dict_lock:
                 logging.info(f"Frequency added: {freq}")
                 self.freqs_thresholds[freq].append(power)
@@ -410,9 +424,8 @@ class FrequencyAdder:
 
 
 demodulators = {}
+available_freqs = []
 for f in freqs:
-    f = float((f / 1000) // FREQUENCY_RESOLUTION) * FREQUENCY_RESOLUTION * 1000
-    print(f)
     demodulators[f] = Demodulator(f)
 remaining_data = b''
 mean, std = get_average_noise()

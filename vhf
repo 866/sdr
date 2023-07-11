@@ -16,6 +16,6 @@ CENTR=$(($s / $n))
 CENTR=$(($CENTR / $STEP))
 CENTR=$(($CENTR * $STEP))
 
-BW=1800000
+BW=1000000
 
 rtl_sdr -f $CENTR -g 25 -s $BW - | ./scan_record_nfm.py $CENTR $BW $STEP $CHANNEL_BW $FREQS . -a $*
