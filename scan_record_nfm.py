@@ -28,15 +28,14 @@ CENTER=int(sys.argv[1])
 INPUT_RATE = int(sys.argv[2])
 STEP = int(sys.argv[3])
 IF_BANDWIDTH=int(sys.argv[4])
-N = 5
+N_NOISE = 5
 INGEST_SIZE = INPUT_RATE // 10
 
 IF_RATE = 25000
 AUDIO_BANDWIDTH = 4000
 AUDIO_RATE = 12500
-FREQUENCY_RESOLUTION = 15 # in kHz
-THRESHOLD_SNR = 18 # 9dB SNR = 1.5 bit
-THRESHOLD_AC = 0.73
+THRESHOLD_SNR = 15 # 9dB SNR = 1.5 bit
+THRESHOLD_AC = 0.4# 3
 HISTERESIS_UP = -3     # not recording -> recording
 HISTERESIS_DOWN = 3   # recording -> stop
 CHANNEL_SPACING = 12500
@@ -67,7 +66,7 @@ tau = 2 * math.pi
 silence = numpy.zeros(IF_RATE // 10)
 
 class Demodulator:
-    def __init__(self, freq):
+    def __init__(self, freq: int):
         self.freq = freq
         self.wav = None
         self.histeresis = HISTERESIS_UP
@@ -121,7 +120,7 @@ class Demodulator:
         self.thread = threading.Thread(target=worker)
         self.thread.start()
 
-    def is_within(freq: int) -> bool:
+    def is_within(self, freq: int) -> bool:
         """ Checks if the frequency within the
         range of Demodulator's responsibility """
         return self.lower_freq < freq <= self.higher_freq
@@ -370,7 +369,7 @@ def read_samples_convert():
 
 def get_average_noise() -> Tuple[float, float]:
     total_signal = []
-    for i in range(N):
+    for i in range(N_NOISE):
         _, S = read_samples_convert()
         total_signal.extend(S.tolist())
         time.sleep(0.1)
@@ -391,7 +390,6 @@ class FrequencyAdder:
                 self._ingest(iqsamples)
                 self.queue.task_done()
         self.lock = lock 
-        self.freqs_thresholds = defaultdict(lambda: list())
         self.demod = demod_dict
         self.queue = queue.Queue()
         self.thread = threading.Thread(target=worker)
@@ -406,20 +404,18 @@ class FrequencyAdder:
         to freqs_thresholds
         """
         f, S = convert2hist(iqsamples) 
-        with open(FREQ_OUT_PATH, "at") as out:
-            for freq, power in zip(f, S):
-                out.write(f"{f} {S}\n")
         max_ind = S.argmax()
         power = S[max_ind]
         if power < threshold:
             return
-        freq = f[max_ind]
+        freq = int(f[max_ind] * 1000000)
+        with open(FREQ_OUT_PATH, "at") as out:
+            out.write(f"{freq} {power}\n")
         in_modulators = any([demod.is_within(freq)
                              for demod in self.demod.values()])
         if not in_modulators:
             with dict_lock:
                 logging.info(f"Frequency added: {freq}")
-                self.freqs_thresholds[freq].append(power)
                 self.demod[freq] = Demodulator(freq)
 
 
