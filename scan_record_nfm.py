@@ -34,11 +34,11 @@ INGEST_SIZE = INPUT_RATE // 10
 IF_RATE = 25000
 AUDIO_BANDWIDTH = 4000
 AUDIO_RATE = 12500
-FREQUENCY_RESOLUTION = 5 # in kHz
-THRESHOLD_SNR = 9 # 9dB SNR = 1.5 bit
-THRESHOLD_AC = 0.09
-HISTERESIS_UP = -3      # not recording -> recording
-HISTERESIS_DOWN = 3    # recording -> stop
+FREQUENCY_RESOLUTION = 15 # in kHz
+THRESHOLD_SNR = 18 # 9dB SNR = 1.5 bit
+THRESHOLD_AC = 0.73
+HISTERESIS_UP = -3     # not recording -> recording
+HISTERESIS_DOWN = 3   # recording -> stop
 
 assert (INPUT_RATE // IF_RATE) == (INPUT_RATE / IF_RATE)
 assert (IF_RATE // AUDIO_RATE) == (IF_RATE / AUDIO_RATE)
@@ -390,21 +390,23 @@ class FrequencyAdder:
     def ingest(self, iqsamples):
         self.queue.put(iqsamples)
     
-    def _ingest(self, iqsamples: numpy.ndarray):
+    def _ingest(self, iqsamples: numpy.ndarray) -> None:
         """
         Adds the frequencies with strong signal
         to freqs_thresholds
         """
         f, S = convert2hist(iqsamples) 
-        df = pd.DataFrame({"freq": f, "power": S})
-        df = df.query(f"power > {threshold}")
-        for freq, power in zip(df.freq, df.power):
-            freq = float(freq * 1000 // FREQUENCY_RESOLUTION) * FREQUENCY_RESOLUTION * 1000
-            if freq not in self.freqs_thresholds:
-                with dict_lock:
-                    logging.info(f"Frequency added: {freq}")
-                    self.freqs_thresholds[freq].append(power)
-                    self.demod[freq] = Demodulator(freq)
+        max_ind = S.argmax()
+        power = S[max_ind]
+        if power < threshold:
+            return
+        freq = f[max_ind]
+        freq = float(freq * 1000 // FREQUENCY_RESOLUTION) * FREQUENCY_RESOLUTION * 1000
+        if freq not in self.freqs_thresholds:
+            with dict_lock:
+                logging.info(f"Frequency added: {freq}")
+                self.freqs_thresholds[freq].append(power)
+                self.demod[freq] = Demodulator(freq)
 
 
 demodulators = {}
